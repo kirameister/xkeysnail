@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
 import itertools
-from time import time
+import pydbus
+from time import monotonic
 from inspect import signature
 from .key import Action, Combo, Key, Modifier
 from .output import send_combo, send_key_action, send_key, is_pressed
@@ -262,13 +263,22 @@ _conditional_multipurpose_map = []
 _last_key = None
 
 # last key time record time when execute multi press
-_last_key_time = time()
-_timeout = 1
-def define_timeout(seconds=1):
+_last_key_time = monotonic()
+_timeout = 1000
+def define_timeout(milliseconds=1000):
     global _timeout
-    _timeout = seconds
+    _timeout = milliseconds
+
+_simultaneous_key_timeout = 200
+def define_simultaneous_key_timeout(milliseconds=200):
+    global _simultaneous_key_timeout
+    _simultaneous_key_timeout = milliseconds
 
 
+
+_bus = pydbus.SessionBus()
+def if_ime_on(dbus_path, ime_name_regex):
+    return ime_name_regex.match(_bus.get(dbus_path, '/inputmethod').GetCurrentIM())
 
 def define_modmap(mod_remappings):
     """Defines modmap (keycode translation)
@@ -359,7 +369,7 @@ def multipurpose_handler(multipurpose_map, key, action):
         update_pressed_keys(key, action)
         if action == Action.RELEASE and key_is_down:
             # it is a single press and release
-            if key_was_last_press and _last_key_time + _timeout > time():
+            if key_was_last_press and _last_key_time + _timeout > int(monotonic()*1000):
                 maybe_press_modifiers(multipurpose_map)  # maybe other multipurpose keys are down
                 on_key(single_key, Action.PRESS)
                 on_key(single_key, Action.RELEASE)
@@ -367,7 +377,7 @@ def multipurpose_handler(multipurpose_map, key, action):
             elif mod_is_down:
                 on_key(mod_key, Action.RELEASE)
         elif action == Action.PRESS and not key_is_down:
-            _last_key_time = time()
+            _last_key_time = int(monotonic() * 1000) # obtain the milli-seconds
     # if key is not a multipurpose or mod key we want eventual modifiers down
     elif (key not in Modifier.get_all_keys()) and action == Action.PRESS:
         maybe_press_modifiers(multipurpose_map)
