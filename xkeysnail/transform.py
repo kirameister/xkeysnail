@@ -2,6 +2,7 @@
 
 import itertools
 import pydbus
+import re
 from time import monotonic
 from inspect import signature
 from .key import Action, Combo, Key, Modifier
@@ -258,9 +259,18 @@ _conditional_mod_map = []
 _multipurpose_map = None
 _conditional_multipurpose_map = []
 
+# global variables for simultaneous key input
+_simultaneous_mappings = {}
+_simultaneous_single_key_mappings = {}
+_dbus_path = None
+_ime_name_regex = None
+#_simultaneous_remap_name = None
+
+
 # last key that sent a PRESS event or a non-mod or non-multi key that sent a RELEASE
 # or REPEAT
 _last_key = None
+_last_simul_key = None
 
 # last key time record time when execute multi press
 _last_key_time = monotonic()
@@ -275,10 +285,32 @@ def define_simultaneous_key_timeout(milliseconds=200):
     _simultaneous_key_timeout = milliseconds
 
 
+def define_simultaneous_keymap(dbus_path, ime_name_regex, simul_key_mappings, name):
+    global _simultaneous_mappings 
+    global _simultaneous_single_key_mappings
+    #_simultaneous_mappings = simul_key_mappings
+    for (key, value) in simul_key_mappings.items():
+        if isinstance(key, tuple) and len(key) == 2:
+            _simultaneous_mappings[key] = value
+            new_key = (key[1], key[0])
+            if new_key not in _simultaneous_mappings:
+                _simultaneous_mappings[new_key] = value
+        elif isinstance(key, Key):
+            _simultaneous_single_key_mappings[key] = value
+
+        else:
+            print("keys in define_simultaneous_keymap must be tuple with one or two element(s)")
+
+    global _dbus_path
+    _dbus_path = dbus_path
+    global _ime_name_regex
+    _ime_name_regex = ime_name_regex
+    #global _simultaneous_remap_name
+    #_simultaneous_remap_name = name
 
 _bus = pydbus.SessionBus()
-def if_ime_on(dbus_path, ime_name_regex):
-    return ime_name_regex.match(_bus.get(dbus_path, '/inputmethod').GetCurrentIM())
+def if_ime_on():
+    return _ime_name_regex.match(_bus.get(_dbus_path, '/inputmethod').GetCurrentIM())
 
 def define_modmap(mod_remappings):
     """Defines modmap (keycode translation)
@@ -324,6 +356,7 @@ def define_multipurpose_modmap(multipurpose_remappings):
     """
     global _multipurpose_map
     for key, value in multipurpose_remappings.items():
+        #{Key.ENTER: [Key.ENTER, Key.RIGHT_CTRL]} => {Key.ENTER: [Key.ENTER, Key.RIGHT_CTRL, Action.RELEASE]}
         value.append(Action.RELEASE)
     _multipurpose_map = multipurpose_remappings
 
@@ -351,6 +384,7 @@ def multipurpose_handler(multipurpose_map, key, action):
     def maybe_press_modifiers(multipurpose_map):
         """Search the multipurpose map for keys that are pressed. If found and
         we have not yet sent it's modifier translation we do so."""
+        # {Key.ENTER: [Key.ENTER, Key.RIGHT_CTRL, Action.RELEASE]}
         for k, [ _, mod_key, state ] in multipurpose_map.items():
             if k in _pressed_keys and mod_key not in _pressed_modifier_keys:
                 on_key(mod_key, Action.PRESS)
@@ -387,9 +421,87 @@ def multipurpose_handler(multipurpose_map, key, action):
         _last_key = key
 
 
+def simultaneous_on_key(key, action, wm_class=None, quiet=False):
+    global _last_simul_key
+    global _last_key_time
+    global _simultaneous_mappings 
+    global _simultaneous_single_key_mappings
+    # if given key was a mod key, simply send it
+    if key in Modifier.get_all_keys():
+        update_pressed_modifier_keys(key, action)
+        send_key_action(key, action)
+        return
+    # if modkey was already pressed, do usual transform
+    if(len(_pressed_modifier_keys) > 0):
+        transform_key(key, action, wm_class=wm_class, quiet=quiet)
+        return
+    # if key was not pressed, send that action as well
+    elif not action.is_pressed():
+        print('simultaneous_on_key -- RELEASE -- last key : ')
+        print(_last_simul_key)
+        if (key) in _simultaneous_single_key_mappings and key == _last_simul_key:
+            print("single key released")
+            simul_transform_key(key, None, action, wm_class=wm_class, quiet=quit)
+            _last_simul_key = None
+            _last_key_time = monotonic()
+        if is_pressed(key):
+            send_key_action(key, action)
+        return
+
+    # if the action was PRESS, check if there is a corresponding map..
+    if action == Action.PRESS:
+        print("simultaneous_on_key -- PRESS -- last key : ")
+        print(_last_simul_key)
+        # if there is a corresponding map, send the sequence
+        if (key, _last_simul_key) in _simultaneous_mappings and (int((monotonic() - _last_key_time)*1000) < _simultaneous_key_timeout ):
+            print(" === !!! simultaneous key found !!! ===")
+            # here comes transform process
+            simul_transform_key(key, _last_simul_key, action, wm_class=wm_class, quiet=quit)
+            _last_simul_key = None
+            _last_key_time = monotonic()
+        # corresponding map was found, but pressed too late..
+        elif (key, _last_simul_key) in _simultaneous_mappings:
+            print(" === !!! simultaneous key found !!! ...but too late ===")
+            print(int((monotonic() - _last_key_time) * 1000))
+            print(_last_simul_key)
+            # ... so we'll send the last key and store current key
+            simul_transform_key(_last_simul_key, None, action, wm_class=wm_class, quiet=quit)
+            _last_simul_key = key
+            _last_key_time = monotonic()
+        # if there is no corresponding map, look for an entry in single-type case
+        elif (key) in _simultaneous_single_key_mappings:
+            print("single key pressed")
+            _last_simul_key = key
+            _last_key_time = monotonic()
+        # if there is no corresponding map, simply store that key
+        else:
+            on_key(key, action, wm_class=wm_class, quiet=quiet)
+            update_pressed_keys(key, action)
+            _last_simul_key = None
+            _last_key_time = monotonic()
+            #on_key(key, action)
+    ## we'll also need to consider the oya-key released
+    #if action == Action.RELEASE: 
+    #    pass
+    return
+
+def simul_transform_key(key, last_key, action, wm_class=None, quiet=False):
+    if last_key == None:
+        handle_commands(_simultaneous_single_key_mappings[(key)], None, action)
+    else:
+        handle_commands(_simultaneous_mappings[(key, last_key)], None, action)
+    return
+
+
 def on_event(event, device_name, quiet):
     key = Key(event.code)
     action = Action(event.value)
+    print(" === on_event NEW EVENT ===")
+    print("on_event -- key : ")
+    print(key)
+    print("on_event -- action: ")
+    print(action)
+
     wm_class = None
     # translate keycode (like xmodmap)
     active_mod_map = _mod_map
@@ -401,9 +513,11 @@ def on_event(event, device_name, quiet):
                 params = [wm_class, device_name]
 
             if condition(*params):
+                # condition is met => store the given mod_map
                 active_mod_map = mod_map
                 break
     if active_mod_map and key in active_mod_map:
+        # specified key is in the modmap => replace the key
         key = active_mod_map[key]
 
     active_multipurpose_map = _multipurpose_map
@@ -413,7 +527,6 @@ def on_event(event, device_name, quiet):
             params = [wm_class]
             if len(signature(condition).parameters) == 2:
                 params = [wm_class, device_name]
-
             if condition(*params):
                 active_multipurpose_map = mod_map
                 break
@@ -422,6 +535,15 @@ def on_event(event, device_name, quiet):
         if key in active_multipurpose_map:
             return
 
+    # from here the clause of simultaneous key event handlings..
+    # we'd like to avoid 
+    if _simultaneous_mappings and if_ime_on():
+        simultaneous_on_key(key, action, wm_class=wm_class, quiet=quiet)
+        return
+
+    # simultaneous key event handling until here..
+
+    # it is not about multipurpose process, so just send it to on_key()
     on_key(key, action, wm_class=wm_class, quiet=quiet)
     update_pressed_keys(key, action)
 
@@ -431,9 +553,11 @@ def on_key(key, action, wm_class=None, quiet=False):
         update_pressed_modifier_keys(key, action)
         send_key_action(key, action)
     elif not action.is_pressed():
+    # if key was not pressed, send that action as well
         if is_pressed(key):
             send_key_action(key, action)
     else:
+    # otherwise send the key to transform process
         transform_key(key, action, wm_class=wm_class, quiet=quiet)
 
 
