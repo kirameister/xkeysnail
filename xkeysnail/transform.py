@@ -431,10 +431,6 @@ def simultaneous_on_key(key, action, wm_class=None, quiet=False):
         update_pressed_modifier_keys(key, action)
         send_key_action(key, action)
         return
-    # if modkey was already pressed, do usual transform
-    if(len(_pressed_modifier_keys) > 0):
-        transform_key(key, action, wm_class=wm_class, quiet=quiet)
-        return
     # if key was not pressed, send that action as well
     elif not action.is_pressed():
         print('simultaneous_on_key -- RELEASE -- last key : ')
@@ -446,6 +442,11 @@ def simultaneous_on_key(key, action, wm_class=None, quiet=False):
             _last_key_time = monotonic()
         if is_pressed(key):
             send_key_action(key, action)
+        return
+    # if modkey was already pressed, do usual transform
+    if(len(_pressed_modifier_keys) > 0):
+        print('simultaneous_on_key -- MOD Key already pressed!!')
+        transform_key(key, action, wm_class=wm_class, quiet=quiet)
         return
 
     # if the action was PRESS, check if there is a corresponding map..
