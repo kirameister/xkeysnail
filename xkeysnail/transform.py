@@ -489,7 +489,14 @@ def simul_transform_key(key, last_key, action, wm_class=None, quiet=False):
     if last_key == None:
         handle_commands(_simultaneous_single_key_mappings[(key)], None, action)
     else:
-        handle_commands(_simultaneous_mappings[(key, last_key)], None, action)
+        # in order to handle exclamation and question marks, SHIFT needs to be inserted
+        if _simultaneous_mappings[(key, last_key)][0] == Key.LEFT_SHIFT:
+            # we can assume that no mod-key is pressed when this function is called
+            update_pressed_modifier_keys(Key.LEFT_SHIFT, Action.PRESS)
+            handle_commands(Combo(get_pressed_modifiers(), _simultaneous_mappings[(key, last_key)][1]), None, action)
+            update_pressed_modifier_keys(Key.LEFT_SHIFT, Action.RELEASE)
+        else:
+            handle_commands(_simultaneous_mappings[(key, last_key)], None, action)
     return
 
 
