@@ -293,6 +293,14 @@ def define_simultaneous_keymap(dbus_path, ime_name_regex, simul_key_mappings, na
         if isinstance(key, tuple) and len(key) == 2:
             _simultaneous_mappings[key] = value
             new_key = (key[1], key[0])
+            if new_key in _simultaneous_mappings and _simultaneous_mappings[new_key] != value:
+                print("Inconsistent simultaneous key mappings found:")
+                print(new_key, end=" => ")
+                print(_simultaneous_mappings[new_key])
+                print(new_key, end=" => ")
+                print(value)
+                import sys
+                sys.exit(1)
             if new_key not in _simultaneous_mappings:
                 _simultaneous_mappings[new_key] = value
         elif isinstance(key, Key):
