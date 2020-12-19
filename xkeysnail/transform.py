@@ -441,10 +441,7 @@ def simultaneous_on_key(key, action, wm_class=None, quiet=False):
         return
     # if key was not pressed, send that action as well
     elif not action.is_pressed():
-        print('simultaneous_on_key -- RELEASE -- last key : ')
-        print(_last_simul_key)
         if (key) in _simultaneous_single_key_mappings and key == _last_simul_key:
-            print("single key released")
             simul_transform_key(key, None, action, wm_class=wm_class, quiet=quit)
             _last_simul_key = None
             _last_key_time = monotonic()
@@ -453,33 +450,30 @@ def simultaneous_on_key(key, action, wm_class=None, quiet=False):
         return
     # if modkey was already pressed, do usual transform
     if(len(_pressed_modifier_keys) > 0):
-        print('simultaneous_on_key -- MOD Key already pressed!!')
         transform_key(key, action, wm_class=wm_class, quiet=quiet)
         return
 
     # if the action was PRESS, check if there is a corresponding map..
     if action == Action.PRESS:
-        print("simultaneous_on_key -- PRESS -- last key : ")
-        print(_last_simul_key)
         # if there is a corresponding map, send the sequence
         if (key, _last_simul_key) in _simultaneous_mappings and (int((monotonic() - _last_key_time)*1000) < _simultaneous_key_timeout ):
-            print(" === !!! simultaneous key found !!! ===")
             # here comes transform process
             simul_transform_key(key, _last_simul_key, action, wm_class=wm_class, quiet=quit)
             _last_simul_key = None
             _last_key_time = monotonic()
         # corresponding map was found, but pressed too late..
         elif (key, _last_simul_key) in _simultaneous_mappings:
-            print(" === !!! simultaneous key found !!! ...but too late ===")
-            print(int((monotonic() - _last_key_time) * 1000))
-            print(_last_simul_key)
             # ... so we'll send the last key and store current key
             simul_transform_key(_last_simul_key, None, action, wm_class=wm_class, quiet=quit)
             _last_simul_key = key
             _last_key_time = monotonic()
         # if there is no corresponding map, look for an entry in single-type case
-        elif (key) in _simultaneous_single_key_mappings:
-            print("single key pressed")
+        elif (key) in _simultaneous_single_key_mappings and _last_simul_key == None:
+            _last_simul_key = key
+            _last_key_time = monotonic()
+        # key combination is NOT in the mapping, but we need to handle the last-pressed key as well..
+        elif (_last_simul_key) in _simultaneous_single_key_mappings:
+            simul_transform_key(_last_simul_key, None, action, wm_class=wm_class, quiet=quit)
             _last_simul_key = key
             _last_key_time = monotonic()
         # if there is no corresponding map, simply store that key
@@ -512,11 +506,6 @@ def simul_transform_key(key, last_key, action, wm_class=None, quiet=False):
 def on_event(event, device_name, quiet):
     key = Key(event.code)
     action = Action(event.value)
-    print(" === on_event NEW EVENT ===")
-    print("on_event -- key : ")
-    print(key)
-    print("on_event -- action: ")
-    print(action)
 
     wm_class = None
     # translate keycode (like xmodmap)
