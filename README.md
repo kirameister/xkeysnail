@@ -19,7 +19,7 @@ The key remapping mechanism of `xkeysnail` is based on `pykeymacs`
 
 ## Installation
 
-Requires root privilege and **Python 3**.
+Requires root privilege and **Python 3.5**.
 
 ### Ubuntu
 
