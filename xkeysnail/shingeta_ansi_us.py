@@ -156,6 +156,11 @@ define_simultaneous_keymap('org.fcitx.Fcitx', re.compile('mozc'), {
 # remaining key augument
     (Key.A, Key.SEMICOLON)  : [Key.SEMICOLON],
     (Key.A, Key.SLASH)      : [Key.SLASH],
+    (Key.Z, Key.J)          : [Key.Z, Key.L],
+    (Key.Z, Key.H)          : [Key.Z, Key.K],
+    (Key.Z, Key.N)          : [Key.Z, Key.H],
+    (Key.Z, Key.M)          : [Key.Z, Key.J],
+    (Key.Z, Key.SLASH)      : [Key.Z, Key.DOT],
 
 
 }, 'shingeta')
