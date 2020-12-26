@@ -6,7 +6,7 @@ from xkeysnail.transform import *
 # define timeout for simyltaneous key press detection
 define_simultaneous_key_timeout(50)
 
-define_simultaneous_keymap('org.fcitx.Fcitx', re.compile('mozc'), {
+define_simultaneous_keymap(K("C-RIGHT_BRACE"), K("C-LEFT_BRACE"), {
     (Key.J, Key.D)          : [Key.A], # あ
     (Key.K)                 : [Key.I], # い
     (Key.J)                 : [Key.U], # う
