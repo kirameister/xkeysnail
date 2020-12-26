@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import itertools
-import pydbus
 import re
 from time import monotonic
 from inspect import signature
@@ -262,8 +261,6 @@ _conditional_multipurpose_map = []
 # global variables for simultaneous key input
 _simultaneous_mappings = {}
 _simultaneous_single_key_mappings = {}
-_dbus_path = None
-_ime_name_regex = None
 #_simultaneous_remap_name = None
 
 
@@ -271,6 +268,10 @@ _ime_name_regex = None
 # or REPEAT
 _last_key = None
 _last_simul_key = None
+# This variable is to store the previously active WM class \
+# this variable will be udpated on every key event
+# if it is differentn from the currently active WM class, simultaneous mapping switch will be turned off
+_previous_active_window_wm_class = None
 
 # last key time record time when execute multi press
 _last_key_time = monotonic()
@@ -285,9 +286,44 @@ def define_simultaneous_key_timeout(milliseconds=200):
     _simultaneous_key_timeout = milliseconds
 
 
-def define_simultaneous_keymap(dbus_path, ime_name_regex, simul_key_mappings, name):
+_simultaneous_layout_switch = False
+def update_simul_layout_switch(switch):
+    global _simultaneous_layout_switch
+    _simultaneous_layout_switch = switch
+    return _simultaneous_layout_switch
+def disable_simul_switch():
+    return update_simul_layout_switch(False)
+def enable_simul_switch():
+    return update_simul_layout_switch(True)
+
+
+def define_simul_layout_enable_bind(simul_layout_enable_bind):
+    if simul_layout_enable_bind:
+        define_keymap(None, 
+                {simul_layout_enable_bind: enable_simul_switch},
+                "simul_layout_enable")
+
+def define_simul_layout_disable_bind(simul_layout_disable_bind):
+    if simul_layout_disable_bind:
+        define_keymap(None, 
+                {simul_layout_disable_bind: disable_simul_switch},
+                "simul_layout_diable")
+
+
+#def define_simultaneous_keymap(dbus_path, ime_name_regex, simul_key_mappings, name):
+def define_simultaneous_keymap(simul_layout_enable_bind, simul_layout_disable_bind, simul_key_mappings, name):
     global _simultaneous_mappings 
     global _simultaneous_single_key_mappings
+
+    if simul_layout_enable_bind:
+        define_keymap(None, 
+                {simul_layout_enable_bind: enable_simul_switch},
+                "simul_layout_enable")
+    if simul_layout_disable_bind:
+        define_keymap(None, 
+                {simul_layout_disable_bind: disable_simul_switch},
+                "simul_layout_diable")
+
     #_simultaneous_mappings = simul_key_mappings
     for (key, value) in simul_key_mappings.items():
         if isinstance(key, tuple) and len(key) == 2:
@@ -309,16 +345,7 @@ def define_simultaneous_keymap(dbus_path, ime_name_regex, simul_key_mappings, na
         else:
             print("keys in define_simultaneous_keymap must be tuple with one or two element(s)")
 
-    global _dbus_path
-    _dbus_path = dbus_path
-    global _ime_name_regex
-    _ime_name_regex = ime_name_regex
-    #global _simultaneous_remap_name
-    #_simultaneous_remap_name = name
 
-_bus = pydbus.SessionBus()
-def if_ime_on():
-    return _ime_name_regex.match(_bus.get(_dbus_path, '/inputmethod').GetCurrentIM())
 
 def define_modmap(mod_remappings):
     """Defines modmap (keycode translation)
@@ -506,7 +533,13 @@ def simul_transform_key(key, last_key, action, wm_class=None, quiet=False):
 def on_event(event, device_name, quiet):
     key = Key(event.code)
     action = Action(event.value)
+    global _previous_active_window_wm_class
+    global _simultaneous_layout_switch
 
+    wm_class = get_active_window_wm_class()
+    if wm_class != _previous_active_window_wm_class:
+        _simultaneous_layout_switch = False
+        _previous_active_window_wm_class = wm_class
     wm_class = None
     # translate keycode (like xmodmap)
     active_mod_map = _mod_map
@@ -542,10 +575,9 @@ def on_event(event, device_name, quiet):
 
     # from here the clause of simultaneous key event handlings..
     # we'd like to avoid 
-    if _simultaneous_mappings and if_ime_on():
+    if _simultaneous_mappings and _simultaneous_layout_switch:
         simultaneous_on_key(key, action, wm_class=wm_class, quiet=quiet)
         return
-
     # simultaneous key event handling until here..
 
     # it is not about multipurpose process, so just send it to on_key()
