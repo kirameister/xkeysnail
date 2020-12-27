@@ -6,6 +6,11 @@ from xkeysnail.transform import *
 # define timeout for simyltaneous key press detection
 define_simultaneous_key_timeout(50)
 
+# Specify the key to disable simultaneous layout
+# you will need to specify the original key name, even if this was re-mapped to something else
+define_simultaneous_disable_key(Key.RIGHT_ALT)
+
+#define_simultaneous_keymap('org.fcitx.Fcitx', re.compile('mozc'), {
 define_simultaneous_keymap(K("C-RIGHT_BRACE"), K("C-LEFT_BRACE"), {
     (Key.J, Key.D)          : [Key.A], # あ
     (Key.K)                 : [Key.I], # い
