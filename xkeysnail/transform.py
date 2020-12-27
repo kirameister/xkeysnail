@@ -232,6 +232,7 @@ def define_keymap(condition, mappings, name="Anonymous keymap"):
                         expanded_mappings[Combo(set(modifiers), k.key)] = v
                     keys_for_deletion.append(k)
 
+
             # Delete original mappings whose key was expanded into expanded_mappings
             for key in keys_for_deletion:
                 del target[key]
@@ -295,6 +296,11 @@ def disable_simul_switch():
     return update_simul_layout_switch(False)
 def enable_simul_switch():
     return update_simul_layout_switch(True)
+
+_simultaneous_disable_key  = None
+def define_simultaneous_disable_key(k):
+    global _simultaneous_disable_key 
+    _simultaneous_disable_key = k
 
 
 def define_simul_layout_enable_bind(simul_layout_enable_bind):
@@ -535,11 +541,18 @@ def on_event(event, device_name, quiet):
     action = Action(event.value)
     global _previous_active_window_wm_class
     global _simultaneous_layout_switch
+    global _simultaneous_disable_key
 
+    # check if the current WM_CLASS is the same as when previous key-event happened
+    # if not, disable simultaneous switch
     wm_class = get_active_window_wm_class()
     if wm_class != _previous_active_window_wm_class:
         _simultaneous_layout_switch = False
         _previous_active_window_wm_class = wm_class
+    # check if pressed key was simultaneous_disable_key
+    # if yes, disable simultaneous switch
+    if key == _simultaneous_disable_key:
+        _simultaneous_layout_switch = False
     wm_class = None
     # translate keycode (like xmodmap)
     active_mod_map = _mod_map
