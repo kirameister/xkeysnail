@@ -269,10 +269,6 @@ _simultaneous_single_key_mappings = {}
 # or REPEAT
 _last_key = None
 _last_simul_key = None
-# This variable is to store the previously active WM class \
-# this variable will be udpated on every key event
-# if it is differentn from the currently active WM class, simultaneous mapping switch will be turned off
-_previous_active_window_wm_class = None
 
 # last key time record time when execute multi press
 _last_key_time = monotonic()
@@ -297,10 +293,17 @@ def disable_simul_switch():
 def enable_simul_switch():
     return update_simul_layout_switch(True)
 
-_simultaneous_disable_key  = None
-def define_simultaneous_disable_key(k):
-    global _simultaneous_disable_key 
-    _simultaneous_disable_key = k
+_simultaneous_toggle_keys = set()
+def define_simultaneous_toggle_key(k):
+    global _simultaneous_toggle_keys
+    if isinstance(k, set):
+        _simultaneous_toggle_keys = _simultaneous_toggle_keys.union(k)
+    else:
+        _simultaneous_toggle_keys.add(k)
+def toggle_simul_switch():
+    global _simultaneous_layout_switch
+    _simultaneous_layout_switch = not _simultaneous_layout_switch
+    return
 
 
 def define_simul_layout_enable_bind(simul_layout_enable_bind):
@@ -317,18 +320,9 @@ def define_simul_layout_disable_bind(simul_layout_disable_bind):
 
 
 #def define_simultaneous_keymap(dbus_path, ime_name_regex, simul_key_mappings, name):
-def define_simultaneous_keymap(simul_layout_enable_bind, simul_layout_disable_bind, simul_key_mappings, name):
+def define_simultaneous_keymap(simul_key_mappings, name):
     global _simultaneous_mappings 
     global _simultaneous_single_key_mappings
-
-    if simul_layout_enable_bind:
-        define_keymap(None, 
-                {simul_layout_enable_bind: enable_simul_switch},
-                "simul_layout_enable")
-    if simul_layout_disable_bind:
-        define_keymap(None, 
-                {simul_layout_disable_bind: disable_simul_switch},
-                "simul_layout_diable")
 
     #_simultaneous_mappings = simul_key_mappings
     for (key, value) in simul_key_mappings.items():
@@ -539,20 +533,14 @@ def simul_transform_key(key, last_key, action, wm_class=None, quiet=False):
 def on_event(event, device_name, quiet):
     key = Key(event.code)
     action = Action(event.value)
-    global _previous_active_window_wm_class
     global _simultaneous_layout_switch
-    global _simultaneous_disable_key
+    global _simultaneous_toggle_key
 
-    # check if the current WM_CLASS is the same as when previous key-event happened
-    # if not, disable simultaneous switch
-    wm_class = get_active_window_wm_class()
-    if wm_class != _previous_active_window_wm_class:
-        _simultaneous_layout_switch = False
-        _previous_active_window_wm_class = wm_class
     # check if pressed key was simultaneous_disable_key
     # if yes, disable simultaneous switch
-    if key == _simultaneous_disable_key:
-        _simultaneous_layout_switch = False
+    if key in _simultaneous_toggle_keys and action.is_pressed():
+        toggle_simul_switch()
+
     wm_class = None
     # translate keycode (like xmodmap)
     active_mod_map = _mod_map
